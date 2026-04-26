@@ -27,100 +27,94 @@
     pip install -r requirements.txt
 """
 
+import os
+import sys
 import time
-from sdk import TactilePressureSDK
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from tactile_sdk import TactilePressureSDK
+
+# ---------------------------------------------------------------------------
+# 配置
+# ---------------------------------------------------------------------------
+PORT = "COM6"
+SLAVE_ADDRESS = 1
+TARGET_HZ = 200
 
 
-def main():
-    # 配置串口和从设备地址
-    port = "COM6"  # 根据实际情况修改
-    slave_address = 1
-    
+def main() -> None:
     print("=" * 80)
-    print("压力值高速读取 - 200Hz")
+    print(f"压力值高速读取 — {TARGET_HZ} Hz")
     print("=" * 80)
     print()
-    
-    # 使用上下文管理器自动管理连接
-    with TactilePressureSDK(port=port, slave_address=slave_address) as sdk:
-        print(f"✓ 设备连接成功 (端口: {port}, 地址: {slave_address})")
+
+    with TactilePressureSDK(port=PORT, slave_address=SLAVE_ADDRESS) as sdk:
+        print(f"✓ 设备连接成功 (端口: {PORT}, 地址: {SLAVE_ADDRESS})")
         print()
-        
+
         # 获取压力点总数
         try:
-            point_count = sdk.get_pressure_point_count()
+            point_count = sdk.config.get_pressure_point_count()
             print(f"压力点总数: {point_count}")
-        except Exception as e:
-            print(f"获取压力点总数失败: {e}")
+        except Exception as exc:
+            print(f"获取压力点总数失败: {exc}，默认 60")
             point_count = 60
-        
-        # 设置压力值类型为标定值
+
+        # 设置为标定值模式
         try:
-            sdk.set_pressure_value_type(1)  # 1表示标定值，0表示AD值
-            print("压力值类型: 标定值")
-        except Exception as e:
-            print(f"设置压力值类型失败: {e}")
-        
+            sdk.config.set_pressure_value_type(1)
+            print("压力值类型: 标定值 (mN)")
+        except Exception as exc:
+            print(f"设置压力值类型失败: {exc}")
+
         print()
-        print("开始以200Hz速率读取压力值（按Ctrl+C停止）...")
+        print(f"开始以 {TARGET_HZ} Hz 速率读取压力值（按 Ctrl+C 停止）...")
         print()
-        
-        # 性能统计变量
+
+        target_interval = 1.0 / TARGET_HZ
         frame_count = 0
         error_count = 0
         last_stats_time = time.perf_counter()
-        
-        # 目标采样间隔：200Hz = 1/200 = 0.005秒 = 5ms
-        target_interval = 1.0 / 200.0
-        
+
         try:
             next_read_time = time.perf_counter()
-            
+
             while True:
                 current_time = time.perf_counter()
-                
-                # 等待到下一个采样时间点
+
                 if current_time < next_read_time:
-                    # 精确延时
-                    time.sleep(max(0, next_read_time - current_time))
+                    time.sleep(max(0.0, next_read_time - current_time))
                     current_time = time.perf_counter()
-                
-                # 使用优化的快速读取接口
-                pressure_values = sdk.read_pressure_fast()
-                
+
+                pressure_values = sdk.pressure.read_fast()
+
                 if pressure_values is not None:
                     frame_count += 1
-                    
-                    # 打印60个压力点的数组
                     print(pressure_values)
-                    
                 else:
                     error_count += 1
-                
-                # 计算下一次读取时间
+
                 next_read_time += target_interval
-                
-                # 如果已经延迟太多，重新同步
                 if next_read_time < current_time:
                     next_read_time = current_time + target_interval
-                
-                # 每秒统计一次性能（不影响主循环）
+
                 if current_time - last_stats_time >= 1.0:
-                    actual_fps = frame_count / (current_time - last_stats_time)
-                    total_frames = frame_count + error_count
-                    error_rate = (error_count / total_frames * 100) if total_frames > 0 else 0
-                    
-                    print(f"\n>>> 统计: 实际采样率={actual_fps:.1f}Hz | "
-                          f"成功={frame_count} | 失败={error_count} | 错误率={error_rate:.2f}%\n")
-                    
-                    # 重置计数器
+                    elapsed = current_time - last_stats_time
+                    actual_fps = frame_count / elapsed
+                    total = frame_count + error_count
+                    error_rate = (error_count / total * 100) if total > 0 else 0.0
+                    print(
+                        f"\n>>> 统计: 实际采样率={actual_fps:.1f} Hz | "
+                        f"成功={frame_count} | 失败={error_count} | "
+                        f"错误率={error_rate:.2f}%\n"
+                    )
                     frame_count = 0
                     error_count = 0
                     last_stats_time = current_time
-            
+
         except KeyboardInterrupt:
-            print()
-            print("=" * 80)
+            print("\n" + "=" * 80)
             print("停止读取")
             print("=" * 80)
 

@@ -22,8 +22,8 @@
         修改后下次连接必须使用新地址，请记录保存。
 
 【使用方法】
-    1. 将传感器通过 USB 连接到电脑，确认串口号并修改下方 port 变量。
-    2. 确认 slave_address 与设备拨码地址一致（默认为 1）。
+    1. 将传感器通过 USB 连接到电脑，确认串口号并修改下方 PORT 变量。
+    2. 确认 SLAVE_ADDRESS 与设备拨码地址一致（默认为 1）。
     3. 运行脚本：
            python 03_demo_configuration.py
 
@@ -35,89 +35,103 @@
     pip install -r requirements.txt
 """
 
-from sdk import TactilePressureSDK
-from sdk.modbus_rtu import ModbusRTUError
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from tactile_sdk import TactilePressureSDK, CommunicationError, DeviceConnectionError
+
+# ---------------------------------------------------------------------------
+# 配置
+# ---------------------------------------------------------------------------
+PORT = "COM6"
+SLAVE_ADDRESS = 1
 
 
-def main():
-    # 配置串口和从设备地址
-    port = "COM6"  # 根据实际情况修改
-    slave_address = 1
-
-    # 连接设备
+def main() -> None:
     try:
-        sdk = TactilePressureSDK(port=port, slave_address=slave_address)
+        sdk = TactilePressureSDK(port=PORT, slave_address=SLAVE_ADDRESS)
         sdk.connect()
-    except Exception as e:
-        print(f"连接失败: {e}")
+    except DeviceConnectionError as exc:
+        print(f"连接失败: {exc}")
         return
 
     print("设备连接成功！\n")
 
     try:
-        # 读取当前配置
-        print("=== 当前配置 ===")
-        print(f"设备地址: {sdk.get_device_address()}")
-        print(f"压力值类型: {'标定值' if sdk.get_pressure_value_type() == 1 else 'AD值'}")
-        print(f"AD屏蔽值: {sdk.get_ad_mask_value()}")
+        # --- 读取当前配置 ---
+        print("=" * 40)
+        print("当前配置")
+        print("=" * 40)
+        print(f"设备地址    : {sdk.device.get_address()}")
+        print(f"压力值类型  : {'标定值 (mN)' if sdk.config.get_pressure_value_type() == 1 else 'AD 原始值'}")
+        print(f"AD 屏蔽值   : {sdk.config.get_ad_mask_value()}")
         print()
 
-        # 配置示例
-        print("=== 配置示例 ===")
+        # --- 配置示例 ---
+        print("=" * 40)
+        print("配置示例")
+        print("=" * 40)
 
         # 1. 设置压力值类型
-        print("1. 设置压力值类型...")
+        print("1. 设置压力值类型 → 标定值 (1)...")
         try:
-            sdk.set_pressure_value_type(1)  # 1=标定值, 0=AD值
-            val = sdk.get_pressure_value_type()
-            print(f"   压力值类型已设置为: {'标定值' if val == 1 else 'AD值'} ({'✓' if val == 1 else '✗ 设置失败'})")
-        except Exception as e:
-            print(f"   设置压力值类型失败: {e}")
+            sdk.config.set_pressure_value_type(1)
+            val = sdk.config.get_pressure_value_type()
+            status = "✓" if val == 1 else "✗ 设置失败"
+            print(f"   结果: {'标定值' if val == 1 else 'AD 值'} [{status}]")
+        except CommunicationError as exc:
+            print(f"   设置失败: {exc}")
 
-        # 2. 设置AD屏蔽值
-        print("2. 设置AD屏蔽值...")
+        # 2. 设置 AD 屏蔽值
+        print("2. 设置 AD 屏蔽值 → 100...")
         try:
-            sdk.set_ad_mask_value(100)
-            val = sdk.get_ad_mask_value()
-            print(f"   AD屏蔽值已设置为: {val} ({'✓' if val == 100 else '✗ 设置失败'})")
-        except Exception as e:
-            print(f"   设置AD屏蔽值失败: {e}")
+            sdk.config.set_ad_mask_value(100)
+            val = sdk.config.get_ad_mask_value()
+            status = "✓" if val == 100 else "✗ 设置失败"
+            print(f"   结果: {val} [{status}]")
+        except CommunicationError as exc:
+            print(f"   设置失败: {exc}")
 
         print()
 
-        # 设备地址修改（可选，交互确认）
-        print("=== 设备地址修改（可选）===")
-        print(f"当前设备地址: {sdk.get_device_address()}")
+        # --- 设备地址修改（可选） ---
+        print("=" * 40)
+        print("设备 Modbus 地址修改（可选）")
+        print("=" * 40)
+        print(f"当前设备地址: {sdk.device.get_address()}")
         print("注意：修改后需用新地址重新连接，请谨慎操作。")
 
         try:
-            response = input("是否修改设备地址？(y/N): ").strip()
+            response = input("\n是否修改设备地址？(y/N): ").strip()
         except EOFError:
             response = "n"
 
-        if response.lower() == 'y':
+        if response.lower() == "y":
             try:
-                new_address_str = input("请输入新地址 (1-247): ").strip()
-                new_address = int(new_address_str)
-                if 1 <= new_address <= 247:
-                    sdk.set_device_address(new_address, use_broadcast=True)
-                    print(f"设备地址已修改为 {new_address}，下次连接请使用新地址。")
-                else:
-                    print("地址超出范围 (1-247)，已取消。")
+                new_addr_str = input("请输入新地址 (1-247): ").strip()
+                new_addr = int(new_addr_str)
+                sdk.device.set_address(new_addr, use_broadcast=True)
+                print(f"设备地址已修改为 {new_addr}，下次连接请使用新地址。")
             except (ValueError, EOFError):
                 print("输入无效，已取消。")
-            except Exception as e:
-                print(f"修改地址失败: {e}")
+            except Exception as exc:
+                print(f"修改地址失败: {exc}")
         else:
             print("已跳过地址修改。")
 
-        print("\n配置完成。")
+        print("\n配置操作完成。")
 
-    except Exception as e:
-        print(f"操作出错: {e}")
+    except Exception as exc:
+        print(f"操作出错: {exc}")
     finally:
         sdk.disconnect()
         print("设备已断开连接。")
+
+
+if __name__ == "__main__":
+    main()
 
 
 if __name__ == "__main__":

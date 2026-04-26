@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "tactile-pressure-sdk"
+version = "2.0.0"
+description = "玄雅 / Synria 科技触觉压力采集模块 Python SDK"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "玄雅 / Synria 科技" }]
+keywords = ["tactile", "pressure", "sensor", "modbus", "serial"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff", "mypy"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tactile_sdk*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
