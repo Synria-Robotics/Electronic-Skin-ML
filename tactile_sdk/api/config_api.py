@@ -7,15 +7,32 @@ AD 屏蔽值、单点面积及归零控制。
 
 from __future__ import annotations
 
-from typing import Optional
+import time
+from typing import List, Optional
 
 from ..exceptions import CommunicationError, ProtocolError, ValidationError
 from ..protocol.constants import RegisterAddress
+from ..protocol.modbus_rtu import ModbusRTU
 from .base import BaseAPI
 
 
 class ConfigAPI(BaseAPI):
     """传感器设备参数配置 API。"""
+
+    def __init__(
+        self,
+        modbus: ModbusRTU,
+        addr_ref: List[int],
+        zero_offsets_ref: List[int],
+    ) -> None:
+        """
+        Args:
+            modbus:           Modbus RTU 协议实例。
+            addr_ref:         共享从设备地址容器。
+            zero_offsets_ref: 共享软件层零点偏移容器（与 PressureAPI 共享同一个 list）。
+        """
+        super().__init__(modbus, addr_ref)
+        self._zero_offsets_ref = zero_offsets_ref
 
     # ------------------------------------------------------------------
     # 主动上传
@@ -197,18 +214,36 @@ class ConfigAPI(BaseAPI):
 
     def trigger_dynamic_zero(self) -> None:
         """
-        立即触发动态归零（将当前传感器输出清零）。
+        立即触发动态归零，效果等同于重新插拔设备。
+
+        执行流程：
+        1. 向寄存器 0x0012 写入 1，尝试触发硬件归零。
+        2. 等待硬件处理（100 ms）。
+        3. 读取当前各点压力值作为软件层基线，存入共享零点容器。
+
+        后续所有 ``pressure.read_all()`` / ``pressure.read_fast()`` 均会逐点
+        减去此基线并截断至 0，无论硬件命令是否实际生效，软件层均可保证归零效果。
 
         建议在传感器表面无负载时调用。
         """
+        # 1. 硬件归零命令（兼容固件；若固件支持则硬件层同步归零）
         self._modbus.write_single_register(
             self._slave_address, RegisterAddress.PRESSURE_DYNAMIC_ZERO, 1
         )
+        # 2. 给硬件留出处理时间
+        time.sleep(0.1)
+        # 3. 读取当前值作为软件基线（无论硬件是否生效，此步保证归零效果）
+        baseline = self._modbus.read_all_pressure_values(self._slave_address)
+        self._zero_offsets_ref.clear()
+        self._zero_offsets_ref.extend(baseline)
 
     def reset_dynamic_zero(self) -> None:
         """
         重置动态归零，恢复出厂零点状态（撤销之前的 :meth:`trigger_dynamic_zero`）。
+
+        同时清除软件层基线，使压力读取恢复为原始值。
         """
         self._modbus.write_single_register(
             self._slave_address, RegisterAddress.PRESSURE_DYNAMIC_ZERO, 2
         )
+        self._zero_offsets_ref.clear()

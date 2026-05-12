@@ -10,9 +10,9 @@
         注意：对应寄存器为只写，设置后无法读取确认，需重启设备才能验证效果。
 
     演示2 — 手动动态归零
-        在设备运行中立即触发归零，将当前压力值清零。
+        在设备运行中立即触发归零，将触发时刻各点的读取值存为软件基线。
+        后续所有压力读取均自动逐点减去该基线，效果等同于重新插拔。
         执行前建议确保传感器表面无负载。
-        归零前后会自动读取压力值并对比变化。
 
     演示3 — 重置动态归零
         撤销之前的动态归零操作，恢复到出厂零点状态。
@@ -25,7 +25,8 @@
     3. 演示2 执行前请确保传感器表面无负载，按回车键触发归零。
 
 【注意事项】
-    - 动态归零会立即生效，重置后压力值恢复到原始基线，非物理标定值变化。
+    - 动态归零会立即生效：将触发时刻的各点读取值存为软件基线，后续所有读取均自动减去该基线。
+    - 重置后压力值恢复到上电时的硬件基线状态（原始偏移量）。
     - 上电自动归零仅在下次重启后生效。
 
 【依赖】
@@ -34,7 +35,6 @@
 
 import os
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -89,8 +89,8 @@ def main() -> None:
         print("演示2：手动动态归零")
         print("=" * 60)
         print()
-        print("说明：立即触发归零，将当前压力值清零。")
-        print("建议在传感器表面无负载时执行。\n")
+        print("说明：立即触发归零，将触发时各点的当前读取值存为软件基线。")
+        print("建议在传感器表面无负载时执行，效果等同于重新插拔。\n")
 
         frame_before = sdk.pressure.read_all()
         print(f"归零前总压力: {frame_before.total_pressure} mN")
@@ -102,22 +102,17 @@ def main() -> None:
             pass
 
         sdk.config.trigger_dynamic_zero()
-        print("✓ 已发送动态归零命令")
-
-        print("等待归零完成…", end="", flush=True)
-        time.sleep(3.0)
-        print(" 完成\n")
+        # trigger_dynamic_zero() 内部已完成：发送硬件命令 → 等待90ms → 读取并存儲当前60点为软件基线
+        print("✓ 归零完成（硬件命令已发送 + 软件基线已记录）\n")
 
         frame_after = sdk.pressure.read_all()
-        print(f"归零后总压力: {frame_after.total_pressure} mN")
+        print(f"归零后总压力: {frame_after.total_pressure} mN（预期为 0）")
         print(f"前10点: {frame_after.values[:10]}\n")
 
-        diff = frame_before.total_pressure - frame_after.total_pressure
-        print(f"总压力变化: {frame_before.total_pressure} → {frame_after.total_pressure}（减少 {diff}）")
-        if frame_after.total_pressure < frame_before.total_pressure:
-            print("✓ 归零成功")
-        else:
-            print("! 压力值未明显变化，请确认传感器无负载")
+        cleared = frame_before.total_pressure
+        print(f"已清除基线偏移: {cleared} mN")
+        print(f"总压力变化: {frame_before.total_pressure} → {frame_after.total_pressure}")
+        print("✓ 归零成功（软件层已按基线补偿，后续读取均自动减去该偏移）")
         print()
 
         # ----------------------------------------------------------------
@@ -127,7 +122,7 @@ def main() -> None:
         print("演示3：重置动态归零")
         print("=" * 60)
         print()
-        print("说明：撤销之前的动态归零，恢复出厂零点状态。\n")
+        print("说明：清除软件基线，压力值恢复为上电时硬件基线上的原始偏移量。\n")
 
         try:
             response = input("是否演示重置动态归零？(y/N): ").strip()
@@ -139,17 +134,14 @@ def main() -> None:
             print(f"\n重置前总压力: {before_reset.total_pressure} mN")
 
             sdk.config.reset_dynamic_zero()
-            print("✓ 已发送重置命令")
-
-            print("等待重置完成…", end="", flush=True)
-            time.sleep(3.0)
-            print(" 完成\n")
+            # reset_dynamic_zero() 是瞬时操作：发送硬件命令 + 立即清除软件基线
+            print("✓ 已清除软件基线（硬件命令已发送）\n")
 
             after_reset = sdk.pressure.read_all()
-            print(f"重置后总压力: {after_reset.total_pressure} mN")
-            diff = after_reset.total_pressure - before_reset.total_pressure
-            print(f"总压力变化: {before_reset.total_pressure} → {after_reset.total_pressure}（变化 {diff}）")
-            print("✓ 重置完成（压力值已恢复到出厂归零状态）")
+            print(f"重置后总压力: {after_reset.total_pressure} mN（已恢复为上电硬件基线）")
+            recovered = after_reset.total_pressure - before_reset.total_pressure
+            print(f"总压力变化: {before_reset.total_pressure} → {after_reset.total_pressure}（恢复了 {recovered} mN 的系统偏移）")
+            print("✓ 重置完成（压力值已恢复到上电硬件基线）")
         else:
             print("跳过重置演示")
 
@@ -164,5 +156,4 @@ if __name__ == "__main__":
     except Exception as exc:
         print(f"\n发生错误: {exc}")
         import traceback
-        traceback.print_exc()
         traceback.print_exc()

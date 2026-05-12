@@ -96,14 +96,18 @@ class TactilePressureSDK:
         # 保证 device.set_address() 后所有子域地址同步更新。
         self._addr_ref: list = [slave_address]
 
+        # 共享软件层零点偏移容器：ConfigAPI 写入，PressureAPI 读取并应用。
+        # 空列表 = 无偏移；非空时长度等于压力点数，逐点相减。
+        self._zero_offsets: list = []
+
         # --- API 层（四个子域） ---
         self.device = DeviceAPI(self._modbus, self._addr_ref)
         """设备身份信息与地址管理，见 :class:`~tactile_sdk.api.device_api.DeviceAPI`。"""
 
-        self.config = ConfigAPI(self._modbus, self._addr_ref)
+        self.config = ConfigAPI(self._modbus, self._addr_ref, self._zero_offsets)
         """传感器参数配置，见 :class:`~tactile_sdk.api.config_api.ConfigAPI`。"""
 
-        self.pressure = PressureAPI(self._modbus, self._addr_ref)
+        self.pressure = PressureAPI(self._modbus, self._addr_ref, self._zero_offsets)
         """压力数据读取，见 :class:`~tactile_sdk.api.pressure_api.PressureAPI`。"""
 
         self.calibration = CalibrationAPI(self._modbus, self._addr_ref)
