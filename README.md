@@ -891,25 +891,42 @@ python 07_demo_test_fps.py
 
 ---
 
-### 08_demo_zero_calibration.py — 归零功能
+### 08_demo_zero_baseline.py — 手动动态归零
 
-**适用场景**：消除传感器在无负载状态下的基线偏移。
+**适用场景**：在设备运行中消除当前基线偏移，效果等同于重新插拔。执行前建议确保传感器表面无负载。
 
 **运行方式**：含交互提示。
 
 ```bash
-python 08_demo_zero_calibration.py
+python 08_demo_zero_baseline.py
 ```
 
-**三种归零操作**：
+**流程**：
+1. 打印归零前全部 60 点压力值及总压力
+2. 按回车触发 `trigger_dynamic_zero()`：发送硬件命令 → 等待 90ms → 读取 60 点存为软件基线
+3. 打印归零后全部 60 点压力值（预期全为 0）
+4. 后续所有读取自动逐点减去该基线（`output[i] = max(0, raw[i] - baseline[i])`）
 
-| 操作 | 说明 | 生效时机 |
-|------|------|---------|
-| 上电自动归零 | 固件强制行为，每次上电时自动将当前压力值归零，不可关闭 | 每次上电自动执行 |
-| 手动动态归零 | 触发后立即采集 60 点快照作为软件基线，后续所有读取逐点减去该基线，效果等同重新插拔 | 立即生效 |
-| 重置动态归零 | 清除软件基线，压力值恢复为上电时的硬件零点状态 | 立即生效 |
+**注意**：软件基线仅在当次 SDK 连接生命周期内有效，断开重连后自动清除。如需撤销归零，运行 `09_demo_baseline_initialization.py`。
 
-**注意**：手动动态归零通过 Python 层软件基线实现，每个压力点独立补偿（`output[i] = max(0, raw[i] - baseline[i])`），执行前建议确保传感器表面无负载。
+---
+
+### 09_demo_baseline_initialization.py — 重置动态归零
+
+**适用场景**：撤销之前的动态归零，将压力值恢复为上电时的硬件零点状态（原始偏移量）。
+
+**运行方式**：直接运行，无交互提示。
+
+```bash
+python 09_demo_baseline_initialization.py
+```
+
+**流程**：
+1. 打印重置前总压力（当前归零后状态）
+2. 调用 `reset_dynamic_zero()`：发送硬件命令 + 立即清除 Python 软件基线
+3. 打印重置后总压力（已恢复为上电硬件基线的原始偏移量）
+
+**注意**：重置后压力值会恢复到上电时固件自动归零后的硬件基线状态，而非完全原始的 AD 零点。
 
 ---
 
@@ -1075,7 +1092,8 @@ with TactilePressureSDK(port="COM6", slave_address=1) as sdk:
 | 05_demo_record_pressure.py | 交互式配置采样率和时长，将压力数据保存为 CSV 文件 |
 | 06_demo_recover_calibration.py | 向固件发送恢复命令，由设备自动还原出厂标定参数（兼容任意批次/型号） |
 | 07_demo_test_fps.py | 全速压测，测试当前硬件条件下的最大实际采样率（实测 ~1480 Hz） |
-| 08_demo_zero_calibration.py | 上电自动归零、手动动态归零、重置归零三种归零演示 |
+| 08_demo_zero_baseline.py | 手动动态归零：触发后将当前 60 点存为软件基线，后续读取自动补偿 |
+| 09_demo_baseline_initialization.py | 重置动态归零：清除软件基线，压力值恢复为上电时的硬件零点状态 |
 
 ### 运行方式
 
