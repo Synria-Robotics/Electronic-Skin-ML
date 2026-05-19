@@ -10,10 +10,10 @@
     - 设备压力读数不准，怀疑标定被破坏
 
 【原理】
-    向寄存器 0x0070 写入命令值 119，固件收到后自动将各压力点的
-    ADC-mN 对应关系恢复为出厂烧录的参数。
-    恢复操作由固件完成，Python 无需知道具体参数值，因此对任何
-    批次/型号的设备均有效。
+    向寄存器 0x0070 写入命令值 119，固件收到后自动将各拟合点的
+    ADC 值恢复为出厂烧录的参数。但固件不会同步恢复压力(mN)值，
+    因此本脚本在发送恢复命令后，会额外将 11 个拟合点的标准出厂
+    压力值（0, 100, 200, … 1000 mN）一并写回设备，确保完整恢复。
 
 【使用方法】
     1. 将传感器通过 USB 连接到电脑，确认串口号并修改下方 PORT 变量。
@@ -34,7 +34,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tactile_sdk import TactilePressureSDK, CommunicationError
+from tactile_sdk import TactilePressureSDK, CommunicationError, CalibrationMode
 
 # ---------------------------------------------------------------------------
 # 配置
@@ -45,21 +45,30 @@ SLAVE_ADDRESS = 1
 # 11 个拟合点（用于恢复后读回验证）
 FITTING_POINT_COUNT = 11
 
+# 出厂标准压力值：11 个点，0–1000 mN 等间距
+FACTORY_PRESSURES = list(range(0, 1001, 100))  # [0, 100, 200, ..., 1000]
+
 
 def main() -> None:
     with TactilePressureSDK(port=PORT, slave_address=SLAVE_ADDRESS) as sdk:
         print("设备连接成功！\n")
 
         # ----------------------------------------------------------------
-        # 读取恢复前各拟合点 AD 值（用于对比）
+        # 读取恢复前各拟合点 AD + pressure 值（用于对比）
         # ----------------------------------------------------------------
-        print("恢复前各拟合点 AD 值：")
-        before = []
+        print("=== Before recovery ===")
+        pvt = sdk.config.get_pressure_value_type()
+        print(f"pressure_value_type = {pvt} (0=AD, 1=mN)\n")
+        print("before recovery fitting points:")
+        before_ad  = []
+        before_prs = []
         for idx in range(1, FITTING_POINT_COUNT + 1):
             sdk.calibration.set_fitting_point(idx)
-            ad = sdk.calibration.get_fitting_point_ad()
-            before.append(ad)
-            print(f"  拟合点 {idx:>2d}: AD = {ad}")
+            ad   = sdk.calibration.get_fitting_point_ad()
+            pres = sdk.calibration.get_fitting_point_pressure()
+            before_ad.append(ad)
+            before_prs.append(pres)
+            print(f"point {idx:>2d}: AD = {ad:>6}, pressure = {pres:>6} mN")
         print()
 
         # ----------------------------------------------------------------
@@ -82,22 +91,40 @@ def main() -> None:
         print(" 完成\n")
 
         # ----------------------------------------------------------------
-        # 读取恢复后各拟合点 AD 值（验证）
+        # 写回出厂 pressure 值（固件恢复命令只恢复 AD，不恢复 pressure）
         # ----------------------------------------------------------------
-        print("恢复后各拟合点 AD 值：")
-        changed = 0
+        print("正在写回出厂压力值（0–1000 mN）…")
+        sdk.calibration.set_mode(CalibrationMode.ALL_POINTS)
         for idx in range(1, FITTING_POINT_COUNT + 1):
             sdk.calibration.set_fitting_point(idx)
-            ad = sdk.calibration.get_fitting_point_ad()
-            diff = ad - before[idx - 1]
-            mark = f"  ← 变化 {diff:+d}" if diff != 0 else ""
-            print(f"  拟合点 {idx:>2d}: AD = {ad}{mark}")
+            ad = sdk.calibration.get_fitting_point_ad()          # 读取刚恢复的出厂 AD
+            pres = FACTORY_PRESSURES[idx - 1]                    # 出厂 pressure
+            sdk.calibration.set_fitting_point_pressure(pres)
+            sdk.calibration.calibrate(ad_value=ad)               # 以出厂 AD + 出厂 pressure 提交
+            print(f"  拟合点 {idx:>2d}: AD = {ad:>6}, pressure = {pres:>6} mN  ✓")
+        print()
+
+        # ----------------------------------------------------------------
+        # 读取恢复后各拟合点 AD + pressure（验证）
+        # ----------------------------------------------------------------
+        print("=== Recover factory calibration ===")
+        pvt_after = sdk.config.get_pressure_value_type()
+        print(f"pressure_value_type after clear = {pvt_after} (0=AD, 1=mN)\n")
+        print("after recovery fitting points:")
+        ad_changed = 0
+        for idx in range(1, FITTING_POINT_COUNT + 1):
+            sdk.calibration.set_fitting_point(idx)
+            ad   = sdk.calibration.get_fitting_point_ad()
+            pres = sdk.calibration.get_fitting_point_pressure()
+            diff = ad - before_ad[idx - 1]
+            mark = f"  (AD {diff:+d})" if diff != 0 else ""
+            print(f"point {idx:>2d}: AD = {ad:>6}, pressure = {pres:>6} mN{mark}")
             if diff != 0:
-                changed += 1
+                ad_changed += 1
 
         print()
-        if changed > 0:
-            print(f"✓ 恢复完成（{changed} 个拟合点 AD 值发生变化，出厂标定已生效）")
+        if ad_changed > 0:
+            print(f"✓ 恢复完成（{ad_changed} 个拟合点 AD 值发生变化，出厂标定已全部生效）")
         else:
             print("✓ 恢复完成（各拟合点 AD 值与恢复前一致，标定本已是出厂状态）")
 

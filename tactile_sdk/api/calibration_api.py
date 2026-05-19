@@ -75,6 +75,12 @@ class CalibrationAPI(BaseAPI):
             self._slave_address, RegisterAddress.FITTING_POINT_AD_VALUE, 1
         )[0]
 
+    def get_fitting_point_pressure(self) -> int:
+        """读取当前拟合点记录的压力值（mN）。"""
+        return self._modbus.read_holding_registers(
+            self._slave_address, RegisterAddress.FITTING_POINT_PRESSURE_VALUE, 1
+        )[0]
+
     def set_fitting_point_pressure(self, pressure_mn: int) -> None:
         """
         设置当前拟合点的压力值。

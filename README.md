@@ -87,7 +87,7 @@ Electronic-Skin-ML-main/
 │       ├── serial_transport.py   ← pyserial 封装，字节级 I/O
 │       └── crc16.py              ← 转发模块（向后兼容，实现在 protocol/）
 │
-├── examples/                     ← 8 个完整示例脚本
+├── examples/                     ← 10 个完整示例脚本
 ├── pyproject.toml                ← 包元数据与构建配置
 ├── requirements.txt              ← 依赖（仅 pyserial）
 └── actual.moduluscali.moduluscali.csv  ← 出厂标定数据备份
@@ -927,6 +927,36 @@ python 09_demo_baseline_initialization.py
 3. 打印重置后总压力（已恢复为上电硬件基线的原始偏移量）
 
 **注意**：重置后压力值会恢复到上电时固件自动归零后的硬件基线状态，而非完全原始的 AD 零点。
+
+---
+
+### 10_demo_read_calibration.py — 读取当前标定参数
+
+**适用场景**：查看设备当前存储的 11 个拟合点标定参数，用于验证标定是否正确写入或被意外覆盖。
+
+**运行方式**：直接运行，无交互提示。
+
+```bash
+python 10_demo_read_calibration.py
+```
+
+**输出内容**：
+- `pressure_value_type`：当前输出模式（0 = AD 原始值，1 = 标定值 mN）
+- 11 个拟合点各自的 AD 值与对应压力值（mN）
+
+**示例输出**：
+```
+pressure_value_type = 1  (0=AD 值, 1=标定值 mN)
+
+    点位      AD 值   pressure (mN)
+------------------------------------
+point  1:  AD =     10,   pressure =      0 mN
+point  2:  AD =    559,   pressure =    100 mN
+...
+point 11:  AD =   2284,   pressure =   1000 mN
+```
+
+**注意**：读取的是设备可读写存储区（Flash/EEPROM）里的当前值。运行 `06_demo_recover_calibration.py` 或固件 `clear()` 命令会覆盖这些值；真实出厂标定数据备份在 `actual.moduluscali.moduluscali.csv`。
 
 ---
 
